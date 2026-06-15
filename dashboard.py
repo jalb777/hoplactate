@@ -13,7 +13,7 @@ st.title("🏃‍♂️ Metabolic Training Hub")
 # --- STRAVA CREDENTIALS ---
 CLIENT_ID = 256747  # Replace with yours
 CLIENT_SECRET = '812d2a7b01d0e2efb084139152f1997db1a092cd'  # Replace with yours
-REFRESH_TOKEN = '18eeeefcc8cdfab3f254cb0e2c05708cbe8a7510ere'  # Replace with yours
+REFRESH_TOKEN = '714aecfc2257a54974220ec2bbe6e40a98f32e5b'  # Replace with yours
 
 # --- FILE PATHS ---
 RUN_LOG = 'seasonal_log.csv'
