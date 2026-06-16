@@ -267,12 +267,53 @@ if st.session_state.logged_in:
                 show_ghost = st.checkbox("Curve Predictions")
                 shift_decimal = 0.0
                 
-                if show_ghost:
+          if show_ghost:
                     p_col1, p_col2 = st.columns(2)
-                    weeks_out = p_col1.slider("Additional Weeks of Training", 1, 12, 6)
-                    vol_qual = p_col2.slider("Training Consistency Multiplier", 1.0, 5.0, 3.0, help="Rate your training discipline. 1.0 = Sloppy (running too fast on easy days, missing threshold targets). 5.0 = Robotic (perfect metabolic control). Higher scores multiply your physiological adaptation.")
-                    shift_decimal = (weeks_out * vol_qual * 1.5) / 60.0
+                    
+                    with p_col1:
+                        time_mode = st.radio("Timeline", ["Set Weeks", "Race Date"], horizontal=True)
+                        weeks_out = st.slider("Additional Base Weeks", 1, 24, 6) if time_mode == "Set Weeks" else max(1, (target_date - comp_date).days // 7)
+                        curr_mileage = st.number_input("Current Weekly Mileage", 20, 120, 50)
+                        planned_avg_mileage = curr_mileage + (st.number_input("Avg. Weekly Change", -10, 30, 5) / 2)
+                        
+                    with p_col2:
+                        lt2_min = st.number_input("Avg LT2 Minutes/Week", 0, 120, 40)
+                        vol_qual = st.slider("Consistency (1-5)", 1.0, 5.0, 3.0)
 
+                    # --- ADVANCED CALIBRATION ENGINE ---
+                    # 1. Diminishing Returns based on LT1 Pace
+                    current_lt1_dec = 6.0 
+                    latest_df = lac_df[lac_df['Date'].dt.date == comp_date].copy()
+                    if not latest_df.empty:
+                        s_lac = latest_df['Lactate_mmol'].values[np.argsort(latest_df['Lactate_mmol'].values)]
+                        s_pace = latest_df['Pace_Dec'].values[np.argsort(latest_df['Lactate_mmol'].values)]
+                        if s_lac.max() >= 1.8 and s_lac.min() <= 1.8:
+                            current_lt1_dec = np.interp(1.8, s_lac, s_pace)
+                    
+                    dim_coeff = (6.0 / current_lt1_dec) ** 1.5 
+                    
+                    # 2. Efficiency Trend (Slope of last 4 weeks of EF)
+                    # We look at the slope of Aerobic_EF to see if you are becoming more economical
+                    ef_trend_coeff = 1.0
+                    runs_df = load_data(RUN_LOG).sort_values('Date')
+                    if len(runs_df) >= 4:
+                        last_4 = runs_df.tail(4)
+                        z = np.polyfit(range(len(last_4)), last_4['Aerobic_EF'], 1)
+                        # If slope is positive (z[0] > 0), you are getting more efficient.
+                        ef_trend_coeff = 1.0 + (z[0] * 5) # Boost prediction by slope
+                    
+                    # 3. Metabolic Polarization Penalty (If LT2 volume is > 20% of total)
+                    # We estimate total vol as Mileage * 10 mins/mile roughly
+                    total_time = (planned_avg_mileage * 10)
+                    pol_penalty = 1.0 if (lt2_min / total_time) < 0.20 else 0.85
+                    
+                    # 4. Final Shift
+                    mileage_coeff = (planned_avg_mileage / curr_mileage) ** 0.5
+                    total_shift_seconds = weeks_out * 1.2 * dim_coeff * mileage_coeff * (vol_qual / 3.0) * ef_trend_coeff * pol_penalty
+                    shift_decimal = total_shift_seconds / 60.0
+
+        
+        
                 fig2, (ax_hr, ax_pace) = plt.subplots(1, 2, figsize=(14, 5))
                 summary_data = []
                 
