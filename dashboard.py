@@ -9,7 +9,7 @@ from stravalib.client import Client
 from streamlit_gsheets import GSheetsConnection
 
 # --- APP CONFIGURATION ---
-st.set_page_config(page_title="Metabolic Training Hub", layout="wide")
+st.set_page_config(page_title="Training Log Analyzer", layout="wide")
 
 # --- CREDENTIALS & DATABASE ---
 CLIENT_ID = 256747 
@@ -96,7 +96,7 @@ if 'username' not in st.session_state:
     st.session_state.username = None
 
 if not st.session_state.logged_in:
-    st.title("🏃‍♂️ Metabolic Training Hub")
+    st.title("🏃‍♂️ Training Log Analyzer ")
     st.markdown("### Welcome to the Squad")
     
     # Toggle between Login and Sign Up
@@ -164,7 +164,9 @@ if st.session_state.logged_in:
 
     if menu == "📊 Dashboard":
         runs_df = load_data(RUN_LOG)
-        st.title(f"{st.session_state.username.capitalize()}'s Metabolic Hub")
+        st.title(f"{st.session_state.username.capitalize()}'s Training 
+        
+        Log Analyzer")
         
         if not runs_df.empty and 'Date' in runs_df.columns:
             runs_df['Date'] = pd.to_datetime(runs_df['Date'])
