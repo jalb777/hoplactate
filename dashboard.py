@@ -500,7 +500,7 @@ if st.session_state.logged_in:
         st.subheader("Input Blood Step-Test Data")
         with st.form("lactate_form"):
             date = st.date_input("Test Date")
-            phase = st.text_input("Workout Type (e.g., LT1, LT2, VO2)")
+            st.selectbox("Workout Type",["LT1", "LT2", "VO2"])
             pace = st.text_input("Pace (e.g., 6:30)", "6:00")
             hr = st.number_input("Heart Rate (BPM)", min_value=40, max_value=220, step=1)
             lactate = st.number_input("Lactate (mmol/L)", min_value=0.0, step=0.1)
