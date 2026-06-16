@@ -1,8 +1,7 @@
-import streamlit as st
+mport streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
-import os
 import hashlib
 from datetime import datetime, time
 from stravalib.client import Client
@@ -10,324 +9,92 @@ from streamlit_gsheets import GSheetsConnection
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Training Log Analyzer", layout="wide")
-
-# --- CREDENTIALS & DATABASE ---
-CLIENT_ID = 256747 
-CLIENT_SECRET = '812d2a7b01d0e2efb084139152f1997db1a092cd' 
-REFRESH_TOKEN = '714aecfc2257a54974220ec2bbe6e40a98f32e5b'
-
-# Replace with your actual Google Sheet URL
 SHEET_URL = "https://docs.google.com/spreadsheets/d/1GPlvl8n0uybnWqrIDVqMBLFZ-FM5lMQUeyG1mC22JuI/edit"
-
-# Connect to Streamlit Secrets
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# Set the tab names
-RUN_LOG = "Run_Log"
-LACTATE_LOG = "Lactate_Log"
-USERS_LOG = "Users"
+RUN_LOG, LACTATE_LOG, USERS_LOG = "Run_Log", "Lactate_Log", "Users"
 
-# --- HELPER FUNCTIONS ---
-def hash_password(password):
-    """Encrypts passwords so they are not plain-text in Google Sheets"""
-    return hashlib.sha256(password.encode()).hexdigest()
+# --- HELPERS ---
+def hash_password(password): return hashlib.sha256(password.encode()).hexdigest()
 
 @st.cache_data(ttl=600)
 def load_data(worksheet_name):
     try:
         df = conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name)
-        # Strip whitespace from headers to prevent hidden key errors
         df.columns = df.columns.str.strip()
-        
-        # Define required columns for your app logic
-        required_cols = ['Date', 'Aerobic_EF', 'Pace_Dec', 'Athlete_ID']
-        
-        if df.empty:
-            return pd.DataFrame(columns=required_cols)
-            
-        # Ensure Date column exists and is datetime
-        if 'Date' in df.columns:
-            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        
-        # Filter by user if applicable
-        if 'Athlete_ID' in df.columns and 'username' in st.session_state:
+        if 'Date' in df.columns: df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        if 'Athlete_ID' in df.columns and 'username' in st.session_state and st.session_state.username:
             df = df[df['Athlete_ID'] == st.session_state.username]
-            
-        return df
-    except Exception:
-        return pd.DataFrame(columns=['Date', 'Aerobic_EF', 'Pace_Dec', 'Athlete_ID'])
+        return df.dropna(subset=['Date'])
+    except: return pd.DataFrame()
 
 def save_data(df, worksheet_name):
-    """Overwrites the specific tab with the updated DataFrame"""
     conn.update(spreadsheet=SHEET_URL, worksheet=worksheet_name, data=df)
     st.cache_data.clear()
 
 def calculate_metabolic_fitness(df):
-    if df.empty or 'Recovery_Min' not in df.columns:
-        return pd.DataFrame()
-    df_copy = df.copy()
-    df_copy['Training_Load'] = (
-        df_copy.get('Recovery_Min', 0) * 1.0 +
-        df_copy.get('LT1_Min', 0) * 2.0 +
-        df_copy.get('LT2_Min', 0) * 4.0 +
-        df_copy.get('VO2_Min', 0) * 6.0
-    )
-    daily_log = df_copy.groupby('Date')['Training_Load'].sum().reset_index()
-    daily_log['Date'] = pd.to_datetime(daily_log['Date'])
-    daily_log.set_index('Date', inplace=True)
-    if not daily_log.empty:
-        idx = pd.date_range(daily_log.index.min(), daily_log.index.max())
-        daily_log = daily_log.reindex(idx, fill_value=0)
-    daily_log['Fitness'] = daily_log['Training_Load'].ewm(span=42, adjust=False).mean()
-    daily_log['Fatigue'] = daily_log['Training_Load'].ewm(span=7, adjust=False).mean()
-    daily_log['Form'] = daily_log['Fitness'] - daily_log['Fatigue']
-    return daily_log.reset_index().rename(columns={'index': 'Date'})
+    df_c = df.copy()
+    for col in ['Recovery_Min', 'LT1_Min', 'LT2_Min', 'VO2_Min']:
+        if col not in df_c.columns: df_c[col] = 0.0
+    df_c['Training_Load'] = df_c['Recovery_Min']*1 + df_c['LT1_Min']*2 + df_c['LT2_Min']*4 + df_c['VO2_Min']*6
+    daily = df_c.groupby('Date')['Training_Load'].sum().resample('D').sum().fillna(0).reset_index()
+    daily['Fitness'] = daily['Training_Load'].ewm(span=42, adjust=False).mean()
+    daily['Fatigue'] = daily['Training_Load'].ewm(span=7, adjust=False).mean()
+    daily['Form'] = daily['Fitness'] - daily['Fatigue']
+    return daily
 
-def generate_training_suggestions(fitness_df):
-    if fitness_df.empty: return None
-    form = fitness_df.iloc[-1]['Form']
-    insights = {}
-    if form < -30:
-        insights['status'], insights['advice'], insights['target_workout'] = "🚨 High Fatigue", "Form is critically low. Deep fatigue state.", "🧘 Easy 30-40 min Recovery"
-    elif -30 <= form <= -10:
-        insights['status'], insights['advice'], insights['target_workout'] = "🟢 Optimal Zone", "The 'sweet spot' for volume progression.", "⏱️ Split Threshold Block"
-    elif -10 < form <= 5:
-        insights['status'], insights['advice'], insights['target_workout'] = "🟡 Neutral State", "You have absorbed recent microcycles.", "🏃‍♂️ Aerobic Base Building"
-    else:
-        insights['status'], insights['advice'], insights['target_workout'] = "⚡ Peaking State", "Systematic fatigue has cleared.", "🚀 High-End Quality / Time-Trial"
-    return insights
-
-# ==========================================
-# 🔐 AUTHENTICATION ENGINE
-# ==========================================
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'username' not in st.session_state:
-    st.session_state.username = None
-
+# --- AUTH ---
+if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if not st.session_state.logged_in:
-    st.title("🏃‍♂️ Training Log Analyzer ")
-    st.markdown("### Lets Go Hop")
-    
-    # Toggle between Login and Sign Up
-    auth_mode = st.radio("Select an option:", ["Log In", "Create Account"], horizontal=True)
-    
+    st.title("🏃‍♂️ Training Log Analyzer")
+    auth_mode = st.radio("Option:", ["Log In", "Create Account"], horizontal=True)
     users_df = load_data(USERS_LOG)
-    
-    if auth_mode == "Log In":
-        with st.form("login_form"):
-            user_input = st.text_input("Username").lower()
-            pass_input = st.text_input("Password", type="password")
-            submitted = st.form_submit_button("Enter Dashboard")
-            
-            if submitted:
-                if not users_df.empty and user_input in users_df['Username'].values:
-                    stored_hash = users_df[users_df['Username'] == user_input]['Password'].iloc[0]
-                    if hash_password(pass_input) == stored_hash:
-                        st.session_state.logged_in = True
-                        st.session_state.username = user_input
-                        st.rerun()
-                    else:
-                        st.error("Incorrect password.")
-                else:
-                    st.error("Username not found.")
-                    
-    elif auth_mode == "Create Account":
-        with st.form("signup_form"):
-            new_user = st.text_input("Choose a Username").lower()
-            new_pass = st.text_input("Choose a Password", type="password")
-            confirm_pass = st.text_input("Confirm Password", type="password")
-            submitted = st.form_submit_button("Create Account")
-            
-            if submitted:
-                if not new_user or not new_pass:
-                    st.error("Please fill out all fields.")
-                elif new_pass != confirm_pass:
-                    st.error("Passwords do not match.")
-                elif not users_df.empty and new_user in users_df['Username'].values:
-                    st.error("Username already exists! Choose another.")
-                else:
-                    new_user_data = pd.DataFrame([{'Username': new_user, 'Password': hash_password(new_pass)}])
-                    updated_users = pd.concat([users_df, new_user_data], ignore_index=True) if not users_df.empty else new_user_data
-                    save_data(updated_users, USERS_LOG)
-                    st.success("Account created! Please switch to 'Log In' to enter.")
+    with st.form("auth"):
+        user, password = st.text_input("Username").lower(), st.text_input("Password", type="password")
+        if st.form_submit_button("Submit"):
+            if auth_mode == "Log In":
+                if not users_df.empty and user in users_df['Username'].values and hash_password(password) == users_df[users_df['Username'] == user]['Password'].iloc[0]:
+                    st.session_state.logged_in, st.session_state.username = True, user
+                    st.rerun()
+                else: st.error("Invalid credentials.")
+            else:
+                save_data(pd.concat([users_df, pd.DataFrame([{'Username': user, 'Password': hash_password(password)}])]), USERS_LOG)
+                st.success("Account created!")
+else:
+    if st.sidebar.button("Log Out"): st.session_state.logged_in = False; st.rerun()
+    menu = st.sidebar.radio("Go to:", ["📊 Dashboard", "🔄 Sync Strava", "📋 Activity Catalog", "➕ Add Manual Run", "🩸 Log Lactate Test"])
 
-# ==========================================
-# 🚀 MAIN APP (ONLY RUNS IF LOGGED IN)
-# ==========================================
-if st.session_state.logged_in:
-    
-    st.sidebar.success(f"Logged in as: **{st.session_state.username}**")
-    if st.sidebar.button("Log Out"):
-        st.session_state.logged_in = False
-        st.session_state.username = None
-        st.rerun()
-        
-    st.sidebar.header("Navigation")
-    menu = st.sidebar.radio("Go to:", [
-        "📊 Dashboard", 
-        "🔄 Sync Strava", 
-        "📋 Activity Catalog", 
-        "➕ Add Manual Run", 
-        "🩸 Log Lactate Test"
-    ])
-
-if menu == "📊 Dashboard":
-        st.title(f"{st.session_state.username.capitalize()}'s Training Log Analyzer")
+    # --- MAIN DASHBOARD ---
+    if menu == "📊 Dashboard":
+        st.title(f"{st.session_state.username.capitalize()}'s Dashboard")
         runs_df = load_data(RUN_LOG)
-        
-        if not runs_df.empty and 'Date' in runs_df.columns:
-            # 1. Standardize Dates
-            runs_df['Date'] = pd.to_datetime(runs_df['Date'], errors='coerce')
-            runs_df = runs_df.dropna(subset=['Date'])
-            runs_df['Date_Only'] = runs_df['Date'].dt.date
-            runs_df = runs_df.sort_values('Date')
-
-            # --- CHART 1: SEASONAL VOLUME ---
+        if not runs_df.empty:
+            # 1. Seasonal Volume
             st.subheader("Seasonal Volume Trends")
-            
-            # Group by date to aggregate multiple runs per day
-            plot_df = runs_df.groupby('Date_Only', as_index=False)[['Recovery_Min', 'LT1_Min', 'LT2_Min']].sum()
-            plot_df = plot_df.sort_values('Date_Only')
+            runs_df['Date_Only'] = runs_df['Date'].dt.date
+            plot_df = runs_df.groupby('Date_Only')[['Recovery_Min', 'LT1_Min', 'LT2_Min']].sum().reset_index().sort_values('Date_Only')
             
             fig, ax = plt.subplots(figsize=(10, 4))
-            x_indices = np.arange(len(plot_df))
-            
-            # Stacked bars using explicit x_indices
-            rec = plot_df['Recovery_Min'].fillna(0).tolist()
-            lt1 = plot_df['LT1_Min'].fillna(0).tolist()
-            lt2 = plot_df['LT2_Min'].fillna(0).tolist()
-            
-            ax.bar(x_indices, rec, label='Recovery', color='gray', alpha=0.6)
-            ax.bar(x_indices, lt1, bottom=rec, label='LT1', color='green', alpha=0.6)
-            bottom_lt2 = [r + l for r, l in zip(rec, lt1)]
-            ax.bar(x_indices, lt2, bottom=bottom_lt2, label='LT2', color='orange', alpha=0.8)
-            
-            ax.set_xticks(x_indices)
-            ax.set_xticklabels([d.strftime('%m-%d') for d in plot_df['Date_Only']], rotation=45)
-            ax.set_ylabel("Minutes")
-            ax.legend(loc='upper left')
-            plt.tight_layout()
+            x = np.arange(len(plot_df))
+            r, l1, l2 = plot_df['Recovery_Min'].fillna(0), plot_df['LT1_Min'].fillna(0), plot_df['LT2_Min'].fillna(0)
+            ax.bar(x, r, label='Recovery', color='gray'); ax.bar(x, l1, bottom=r, label='LT1', color='green')
+            ax.bar(x, l2, bottom=r+l1, label='LT2', color='orange')
+            ax.set_xticks(x); ax.set_xticklabels(plot_df['Date_Only'], rotation=45)
             st.pyplot(fig)
-            st.divider()
-
-            # --- CHART 2: FITNESS & FORM ---
-            st.subheader("Impulse-Response Model (Fitness & Form)")
-            fitness_df = calculate_metabolic_fitness(runs_df)
-            if not fitness_df.empty:
-                fig_fit, ax_fit = plt.subplots(figsize=(10, 5))
-                ax_fit.plot(fitness_df['Date'], fitness_df['Fitness'], label='Fitness', color='blue')
-                ax_fit.plot(fitness_df['Date'], fitness_df['Fatigue'], label='Fatigue', color='red', linestyle='--')
-                ax_fit.fill_between(fitness_df['Date'], 0, fitness_df['Form'], where=(fitness_df['Form'] >= 0), color='green', alpha=0.3)
-                ax_fit.fill_between(fitness_df['Date'], 0, fitness_df['Form'], where=(fitness_df['Form'] < 0), color='orange', alpha=0.3)
-                plt.xticks(rotation=45)
-                st.pyplot(fig_fit)
-
-            # --- CHART 3: AEROBIC EF ---
-            if 'Aerobic_EF' in runs_df.columns:
-                st.subheader("🫀 Aerobic Efficiency Factor")
-                ef_df = runs_df[runs_df['Aerobic_EF'] > 0]
-                if not ef_df.empty:
-                    fig_ef, ax_ef = plt.subplots(figsize=(10, 3))
-                    ax_ef.plot(ef_df['Date'], ef_df['Aerobic_EF'], marker='o', color='purple')
-                    st.pyplot(fig_ef)
-
-        else:
-            st.info("📊 Training log empty. Sync Strava or add a manual run.")
             
-     # --- CHART 4: LACTATE TRACKER ---
-        st.divider()
-        st.subheader("🩸 Lactate Tracker")
-        lac_df = load_data(LACTATE_LOG)
-        
-        if not lac_df.empty and 'Heart_Rate' in lac_df.columns and 'Pace' in lac_df.columns and 'Date' in lac_df.columns:
-            # Formatting Helpers
-            def parse_pace(pace_str):
-                try:
-                    parts = str(pace_str).split(':')
-                    return int(parts[0]) + int(parts[1]) / 60.0
-                except: return 0.0
+            # 2. Fitness/Form
+            st.subheader("Fitness & Form")
+            fit_df = calculate_metabolic_fitness(runs_df)
+            fig_f, ax_f = plt.subplots(); ax_f.plot(fit_df['Date'], fit_df['Form']); st.pyplot(fig_f)
+        else: st.info("No data found.")
 
-            def format_pace(decimal_pace):
-                mins = int(decimal_pace)
-                secs = int((decimal_pace - mins) * 60)
-                return f"{mins}:{secs:02d}"
-
-            lac_df['Pace_Dec'] = lac_df['Pace'].apply(parse_pace)
-            lac_df['Date'] = pd.to_datetime(lac_df['Date'])
-            test_dates = sorted(lac_df['Date'].dt.date.unique())
-            
-            if len(test_dates) > 0:
-                cutoff = test_dates[-1] - pd.Timedelta(days=120)
-                suggested_idx = next((i for i, d in enumerate(test_dates) if d >= cutoff), 0)
-                
-                st.markdown("### 1. Chronological Scrubber")
-                col1, col2 = st.columns(2)
-                with col1:
-                    baseline_date = st.selectbox("🔵 Baseline Test", options=test_dates, index=suggested_idx, format_func=lambda x: x.strftime('%b %d, %Y'))
-                with col2:
-                    comp_date = st.selectbox("🔴 Current Status", options=test_dates, index=len(test_dates)-1, format_func=lambda x: x.strftime('%b %d, %Y'))
-                
-                st.markdown("### 2. Predictive Simulator")
-                show_ghost = st.checkbox("Enable Ghost Curve Projection")
-                
-                shift_decimal = 0.0
-                
-                if show_ghost:
-                    p_col1, p_col2 = st.columns(2)
-                    with p_col1:
-                        time_mode = st.radio("Timeline", ["Set Weeks", "Race Date"], horizontal=True)
-                        weeks_out = st.slider("Additional Weeks of Training", 1, 24, 6)
-                        curr_mileage = st.number_input("Current Weekly Mileage", 20, 120, 50)
-                        planned_avg_mileage = curr_mileage + (st.number_input("Avg. Weekly Mileage Change", -10, 30, 5) / 2)
-                    with p_col2:
-                        lt2_min = st.number_input("Avg LT2 Minutes/Week", 0, 120, 50)
-                        vol_qual = st.slider("Consistency (1-5)", 1.0, 5.0, 4.0, step=0.5, help="1=Burnout, 5=Robotic.")
-
-                    # --- CALIBRATION ENGINE ---
-                    latest_df = lac_df[lac_df['Date'].dt.date == comp_date].copy()
-                    current_lt1_dec = 6.0
-                    if not latest_df.empty:
-                        s_lac = latest_df['Lactate_mmol'].values[np.argsort(latest_df['Lactate_mmol'].values)]
-                        s_pace = latest_df['Pace_Dec'].values[np.argsort(latest_df['Lactate_mmol'].values)]
-                        if s_lac.max() >= 1.8 and s_lac.min() <= 1.8:
-                            current_lt1_dec = np.interp(1.8, s_lac, s_pace)
-                    
-                    dim_coeff = (6.0 / current_lt1_dec) ** 1.5 
-                    runs_df = load_data(RUN_LOG)
-                    ef_trend_coeff = 1.0
-                    if len(runs_df) >= 4:
-                        last_4 = runs_df.tail(4)
-                        z = np.polyfit(range(len(last_4)), last_4['Aerobic_EF'], 1)
-                        ef_trend_coeff = 1.0 + (z[0] * 5)
-                    
-                    total_time = (planned_avg_mileage * 10)
-                    pol_penalty = 1.0 if (lt2_min / total_time) < 0.20 else 0.85
-                    
-                    shift_decimal = (weeks_out * 1.2 * dim_coeff * ((planned_avg_mileage/curr_mileage)**0.5) * (vol_qual/3.0) * ef_trend_coeff * pol_penalty) / 60.0
-
-                # --- PLOTTING ---
-                fig2, (ax_hr, ax_pace) = plt.subplots(1, 2, figsize=(14, 5))
-                summary_data = []
-                for t_date in [baseline_date, comp_date]:
-                    day_df = lac_df[lac_df['Date'].dt.date == t_date].copy()
-                    is_latest = (t_date == comp_date)
-                    line_style, plot_color = ('-', 'red') if is_latest else ('--', 'blue')
-                    
-                    ax_hr.plot(day_df.sort_values('Heart_Rate')['Heart_Rate'], day_df.sort_values('Heart_Rate')['Lactate_mmol'], marker='o', linestyle=line_style, color=plot_color, label=f"{'Current' if is_latest else 'Baseline'}: {t_date}")
-                    ax_pace.plot(day_df.sort_values('Pace_Dec', ascending=False)['Pace_Dec'], day_df.sort_values('Pace_Dec', ascending=False)['Lactate_mmol'], marker='o', linestyle=line_style, color=plot_color)
-
-                if show_ghost:
-                    latest_df = lac_df[lac_df['Date'].dt.date == comp_date].sort_values('Pace_Dec', ascending=False)
-                    ax_pace.plot(latest_df['Pace_Dec'] - shift_decimal, latest_df['Lactate_mmol'], marker='x', linestyle=':', color='purple', label="Projected Goal", linewidth=2.5)
-
-                ax_hr.set_xlabel("HR (BPM)"); ax_hr.set_ylabel("Lactate (mmol/L)"); ax_hr.grid(True, linestyle=':')
-                ax_pace.set_xlabel("Pace (Min/Mile)"); ax_pace.invert_xaxis(); ax_pace.grid(True, linestyle=':')
-                ax_pace.set_xticklabels([format_pace(t) for t in ax_pace.get_xticks()])
-                ax_hr.legend(); ax_pace.legend()
-                
-                st.pyplot(fig2)
-                
+    # --- LOGGING SECTIONS ---
+    elif menu == "🩸 Log Lactate Test":
+        with st.form("lac_form"):
+            date, phase, pace, hr, lac = st.date_input("Date"), st.selectbox("Type", ["LT1", "LT2", "VO2"]), st.text_input("Pace", "6:00"), st.number_input("HR", 40, 220, 150), st.number_input("Lactate", 0.0, 15.0, 2.0)
+            if st.form_submit_button("Save"):
+                save_data(pd.concat([load_data(LACTATE_LOG), pd.DataFrame([{'Athlete_ID': st.session_state.username, 'Date': str(date), 'Test_Phase': phase, 'Pace': pace, 'Heart_Rate': hr, 'Lactate_mmol': lac}])]), LACTATE_LOG)
+                st.success("Logged!")
     # ==========================================
     # 🔄 SYNC STRAVA
     # ==========================================
