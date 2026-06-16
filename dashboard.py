@@ -277,6 +277,7 @@ if st.session_state.logged_in:
                 shift_decimal = 0.0
                 
                 if show_ghost:
+                    st.cache_data.clear()
                     p_col1, p_col2 = st.columns(2)
                     
                     with p_col1:
