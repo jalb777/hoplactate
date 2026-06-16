@@ -5,31 +5,42 @@ import numpy as np
 import os
 from datetime import datetime, time
 from stravalib.client import Client
+from streamlit_gsheets import GSheetsConnection
 
 # --- APP CONFIGURATION ---
 st.set_page_config(page_title="Metabolic Training Hub", layout="wide")
 st.title("🏃‍♂️ Metabolic Training Hub")
 
 # --- STRAVA CREDENTIALS ---
-CLIENT_ID = 256747  # Replace with yours
-CLIENT_SECRET = '812d2a7b01d0e2efb084139152f1997db1a092cd'  # Replace with yours
-REFRESH_TOKEN = '714aecfc2257a54974220ec2bbe6e40a98f32e5b'  # Replace with yours
+CLIENT_ID = 123456  # Replace with yours
+CLIENT_SECRET = 'your_secret_here'  # Replace with yours
+REFRESH_TOKEN = 'your_token_here'  # Replace with yours
 
-# --- FILE PATHS ---
-RUN_LOG = 'seasonal_log.csv'
-LACTATE_LOG = 'lactate_log.csv'
+# --- DATABASE CONFIGURATION ---
+# Replace with your actual Google Sheet URL
+SHEET_URL = "https://docs.google.com/spreadsheets/d/YOUR_SHEET_ID_HERE/edit"
+
+# Connect to Streamlit Secrets
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# Set the tab names (this prevents us from having to rewrite the rest of the app)
+RUN_LOG = "Run_Log"
+LACTATE_LOG = "Lactate_Log"
 
 # --- HELPER FUNCTIONS ---
-def load_data(filepath):
-    if os.path.exists(filepath):
-        try:
-            return pd.read_csv(filepath)
-        except Exception:
-            return pd.DataFrame()
-    return pd.DataFrame()
+def load_data(worksheet_name):
+    """Pulls live data from the Google Sheet"""
+    try:
+        df = conn.read(spreadsheet=SHEET_URL, worksheet=worksheet_name, ttl=0)
+        return df.dropna(how="all")
+    except Exception as e:
+        st.error(f"Failed to connect to database: {e}")
+        return pd.DataFrame()
 
-def save_data(df, filepath):
-    df.to_csv(filepath, index=False)
+def save_data(df, worksheet_name):
+    """Overwrites the specific tab with the updated DataFrame"""
+    conn.update(worksheet=worksheet_name, data=df)
+    st.cache_data.clear()
 
 def calculate_metabolic_fitness(df):
     if df.empty or 'Recovery_Min' not in df.columns:
@@ -75,7 +86,7 @@ def generate_training_suggestions(fitness_df):
         insights['advice'] = f"Your Form is positive at +{form:.1f}. Systematic fatigue has cleared."
         insights['target_workout'] = "🚀 High-End Quality: Short VO2 Max repetitions or an official time-trial/race"
     return insights
-
+    
 # --- SIDEBAR NAVIGATION ---
 st.sidebar.header("Navigation")
 menu = st.sidebar.radio("Go to:", [
