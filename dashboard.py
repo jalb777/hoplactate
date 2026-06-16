@@ -155,20 +155,81 @@ if menu == "📊 Dashboard":
     else:
         st.info("📊 Your training log is currently empty.")
 
-    # --- CHART 4: LACTATE CURVE ---
+    # --- CHART 4: LACTATE CURVE PROFILE ---
     st.divider()
-    st.subheader("Lactate Curve Profile")
+    st.subheader("🩸 Lactate Curve Profile")
     lac_df = load_data(LACTATE_LOG)
-    if not lac_df.empty and 'Heart_Rate' in lac_df.columns:
-        fig2, ax2 = plt.subplots(figsize=(8, 4))
-        ax2.plot(lac_df['Heart_Rate'], lac_df['Lactate_mmol'], marker='o', color='red', linewidth=2)
-        ax2.axhline(y=2.0, color='green', linestyle='--', alpha=0.5, label='LT1 Baseline (2.0 mmol)')
-        ax2.axhline(y=4.0, color='orange', linestyle='--', alpha=0.5, label='LT2 Baseline (4.0 mmol)')
-        ax2.set_xlabel("Heart Rate (BPM)")
-        ax2.set_ylabel("Blood Lactate (mmol/L)")
-        ax2.legend()
-        ax2.grid(True, linestyle=':', alpha=0.6)
+    
+    if not lac_df.empty and 'Heart_Rate' in lac_df.columns and 'Pace' in lac_df.columns:
+        def parse_pace(pace_str):
+            try:
+                parts = str(pace_str).split(':')
+                return int(parts[0]) + int(parts[1]) / 60.0
+            except:
+                return 0.0
+
+        def format_pace(decimal_pace):
+            mins = int(decimal_pace)
+            secs = int((decimal_pace - mins) * 60)
+            return f"{mins}:{secs:02d}"
+
+        lac_df['Pace_Dec'] = lac_df['Pace'].apply(parse_pace)
+        lac_df = lac_df.sort_values('Heart_Rate') 
+        
+        fig2, (ax_hr, ax_pace) = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # 1. Lactate vs. Heart Rate
+        ax_hr.plot(lac_df['Heart_Rate'], lac_df['Lactate_mmol'], marker='o', color='red', linewidth=2)
+        
+        # Interpolate exact HR for 1.8 and 3.3 mmol
+        if lac_df['Lactate_mmol'].max() >= 1.8 and lac_df['Lactate_mmol'].min() <= 1.8:
+            lt1_hr = np.interp(1.8, lac_df['Lactate_mmol'], lac_df['Heart_Rate'])
+            ax_hr.axvline(x=lt1_hr, color='green', linestyle=':', alpha=0.8, label=f'LT1 HR: {int(lt1_hr)} BPM')
+            
+        if lac_df['Lactate_mmol'].max() >= 3.3 and lac_df['Lactate_mmol'].min() <= 3.3:
+            lt2_hr = np.interp(3.3, lac_df['Lactate_mmol'], lac_df['Heart_Rate'])
+            ax_hr.axvline(x=lt2_hr, color='orange', linestyle=':', alpha=0.8, label=f'LT2 HR: {int(lt2_hr)} BPM')
+
+        ax_hr.axhline(y=1.8, color='green', linestyle='--', alpha=0.5, label='1.8 mmol Baseline')
+        ax_hr.axhline(y=3.3, color='orange', linestyle='--', alpha=0.5, label='3.3 mmol Baseline')
+        ax_hr.set_xlabel("Heart Rate (BPM)")
+        ax_hr.set_ylabel("Blood Lactate (mmol/L)")
+        ax_hr.set_title("Internal Cost (HR)")
+        ax_hr.legend()
+        ax_hr.grid(True, linestyle=':', alpha=0.6)
+
+        # 2. Lactate vs. Pace
+        lac_df = lac_df.sort_values('Pace_Dec', ascending=False)
+        ax_pace.plot(lac_df['Pace_Dec'], lac_df['Lactate_mmol'], marker='o', color='blue', linewidth=2)
+        
+        sorted_indices = np.argsort(lac_df['Lactate_mmol'].values)
+        sorted_lac = lac_df['Lactate_mmol'].values[sorted_indices]
+        sorted_pace = lac_df['Pace_Dec'].values[sorted_indices]
+        
+        # Interpolate exact Pace for 1.8 and 3.3 mmol
+        if sorted_lac.max() >= 1.8 and sorted_lac.min() <= 1.8:
+            lt1_pace_dec = np.interp(1.8, sorted_lac, sorted_pace)
+            ax_pace.axvline(x=lt1_pace_dec, color='green', linestyle=':', alpha=0.8, label=f'LT1 Pace: {format_pace(lt1_pace_dec)}')
+            
+        if sorted_lac.max() >= 3.3 and sorted_lac.min() <= 3.3:
+            lt2_pace_dec = np.interp(3.3, sorted_lac, sorted_pace)
+            ax_pace.axvline(x=lt2_pace_dec, color='orange', linestyle=':', alpha=0.8, label=f'LT2 Pace: {format_pace(lt2_pace_dec)}')
+
+        ax_pace.axhline(y=1.8, color='green', linestyle='--', alpha=0.5)
+        ax_pace.axhline(y=3.3, color='orange', linestyle='--', alpha=0.5)
+        ax_pace.set_xlabel("Pace (Min/Mile)")
+        ax_pace.set_title("External Output (Pace)")
+        ax_pace.invert_xaxis() 
+        
+        ticks = ax_pace.get_xticks()
+        ax_pace.set_xticklabels([format_pace(t) for t in ticks])
+        ax_pace.legend()
+        ax_pace.grid(True, linestyle=':', alpha=0.6)
+
         st.pyplot(fig2)
+        
+    else:
+        st.info("🩸 Your lactate log is empty or missing data columns.")
 
 # ==========================================
 # 🔄 SYNC STRAVA
@@ -308,3 +369,5 @@ elif menu == "🩸 Log Lactate Test":
             updated_lac = pd.concat([existing_lac, new_lac], ignore_index=True)
             save_data(updated_lac, LACTATE_LOG)
             st.success(f"Logged {lactate} mmol/L at {hr} BPM!")
+
+
