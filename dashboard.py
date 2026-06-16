@@ -507,8 +507,8 @@ if st.session_state.logged_in:
             submitted = st.form_submit_button("Save Data Point")
             if submitted:
                 new_lac = pd.DataFrame([{
-                    'Date': str(date), 'Test_Phase': phase, 'Pace': pace, 'Heart_Rate': hr, 'Lactate_mmol': lactate,
-                    'Athlete_ID': st.session_state.username
+                   'Athlete_ID': st.session_state.username, 'Date': str(date), 'Test_Phase': phase, 'Pace': pace, 'Heart_Rate': hr, 'Lactate_mmol': lactate
+                    
                 }])
                 existing_lac = load_data(LACTATE_LOG)
                 updated_lac = pd.concat([existing_lac, new_lac], ignore_index=True) if not existing_lac.empty else new_lac
