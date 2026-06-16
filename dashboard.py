@@ -230,9 +230,9 @@ if st.session_state.logged_in:
         else:
             st.info("📊 Your training log is currently empty. Sync or add a run to get started.")
 
-        # --- CHART 4: HYBRID LACTATE ENGINE ---
+        # --- CHART 4: LACTATE TRACKER ---
         st.divider()
-        st.subheader("🩸 Hybrid Lactate Engine")
+        st.subheader("🩸 Lactate Tracker")
         lac_df = load_data(LACTATE_LOG)
         
         if not lac_df.empty and 'Heart_Rate' in lac_df.columns and 'Pace' in lac_df.columns and 'Date' in lac_df.columns:
