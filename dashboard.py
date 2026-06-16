@@ -269,8 +269,8 @@ if st.session_state.logged_in:
                 
                 if show_ghost:
                     p_col1, p_col2 = st.columns(2)
-                    weeks_out = p_col1.slider("Additional Weeks of Base", 1, 12, 6)
-                    vol_qual = p_col2.slider("Training Consistency Multiplier", 1.0, 5.0, 3.0)
+                    weeks_out = p_col1.slider("Additional Weeks of Training", 1, 12, 6)
+                    vol_qual = p_col2.slider("Training Consistency Multiplier", 1.0, 5.0, 3.0, help="Rate your training discipline. 1.0 = Sloppy (running too fast on easy days, missing threshold targets). 5.0 = Robotic (perfect metabolic control). Higher scores multiply your physiological adaptation.")
                     shift_decimal = (weeks_out * vol_qual * 1.5) / 60.0
 
                 fig2, (ax_hr, ax_pace) = plt.subplots(1, 2, figsize=(14, 5))
