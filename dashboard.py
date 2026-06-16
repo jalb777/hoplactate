@@ -495,3 +495,12 @@ if st.session_state.logged_in:
                 updated_lac = pd.concat([existing_lac, new_lac], ignore_index=True) if not existing_lac.empty else new_lac
                 save_data(updated_lac, LACTATE_LOG)
                 st.success(f"Logged {lactate} mmol/L at {hr} BPM!")
+
+'''
+
+Notes
+-Need to update chart 4 to show pace vs lactate curve and heart rate on 2 y axes
+-fix the single column of chart 1
+-move lactate curve up as chart 2
+
+'''
