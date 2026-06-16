@@ -267,7 +267,7 @@ if st.session_state.logged_in:
                 show_ghost = st.checkbox("Curve Predictions")
                 shift_decimal = 0.0
                 
-          if show_ghost:
+                if show_ghost:
                     p_col1, p_col2 = st.columns(2)
                     
                     with p_col1:
@@ -311,7 +311,7 @@ if st.session_state.logged_in:
                     mileage_coeff = (planned_avg_mileage / curr_mileage) ** 0.5
                     total_shift_seconds = weeks_out * 1.2 * dim_coeff * mileage_coeff * (vol_qual / 3.0) * ef_trend_coeff * pol_penalty
                     shift_decimal = total_shift_seconds / 60.0
-
+                    
         
         
                 fig2, (ax_hr, ax_pace) = plt.subplots(1, 2, figsize=(14, 5))
