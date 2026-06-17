@@ -172,7 +172,7 @@ if st.session_state.logged_in:
         "🩸 Log Lactate Test"
     ])
 
-   if menu == "📊 Dashboard":
+    if menu == "📊 Dashboard":
         st.title(f"{st.session_state.username.capitalize()}'s Training Log Analyzer")
         runs_df = load_data(RUN_LOG)
         
@@ -213,6 +213,7 @@ if st.session_state.logged_in:
             plt.tight_layout()
             st.pyplot(fig)
             st.divider()
+            
             
 # --- CHART 1: SEASONAL VOLUME ---
             st.subheader("Seasonal Volume Trends")
