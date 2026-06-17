@@ -183,38 +183,32 @@ if st.session_state.logged_in:
 # --- CHART 1: SEASONAL VOLUME ---
             st.subheader("Seasonal Volume Trends")
             
-            # 1. Force numeric types BEFORE grouping
-            cols_to_sum = ['Recovery_Min', 'LT1_Min', 'LT2_Min']
-            for col in cols_to_sum:
-                runs_df[col] = pd.to_numeric(runs_df[col], errors='coerce').fillna(0)
+            # 1. Clean and Group
+            runs_df['Date_Only'] = pd.to_datetime(runs_df['Date']).dt.date
+            plot_df = runs_df.groupby('Date_Only')[['Recovery_Min', 'LT1_Min', 'LT2_Min']].sum().reset_index().sort_values('Date_Only')
             
-            # 2. Create Date_Only
-            runs_df['Date_Only'] = pd.to_datetime(runs_df['Date'], errors='coerce').dt.date
-            
-            # 3. Aggregate
-            plot_df = runs_df.dropna(subset=['Date_Only']).groupby('Date_Only', as_index=False)[cols_to_sum].sum()
-            plot_df = plot_df.sort_values('Date_Only')
-            
-            # 4. Extract for plotting
+            # 2. Get numeric indices instead of just strings
+            x_idx = np.arange(len(plot_df))
             x_labels = [d.strftime('%m-%d') for d in plot_df['Date_Only']]
-            rec_vals = plot_df['Recovery_Min'].tolist()
-            lt1_vals = plot_df['LT1_Min'].tolist()
-            lt2_vals = plot_df['LT2_Min'].tolist()
+            rec = plot_df['Recovery_Min'].fillna(0).tolist()
+            lt1 = plot_df['LT1_Min'].fillna(0).tolist()
+            lt2 = plot_df['LT2_Min'].fillna(0).tolist()
             
             # 3. Plotting
             fig, ax = plt.subplots(figsize=(10, 4))
             
-            # Stack the bars
-            ax.bar(x_labels, rec_vals, label='Recovery', color='gray', alpha=0.6)
-            ax.bar(x_labels, lt1_vals, bottom=rec_vals, label='LT1', color='green', alpha=0.6)
+            # USE x_idx (the numbers 0, 1, 2...) instead of x_labels
+            ax.bar(x_idx, rec, label='Recovery', color='gray', alpha=0.6)
+            ax.bar(x_idx, lt1, bottom=rec, label='LT1', color='green', alpha=0.6)
+            bottom_lt2 = [r + l1 for r, l1 in zip(rec, lt1)]
+            ax.bar(x_idx, lt2, bottom=bottom_lt2, label='LT2', color='orange', alpha=0.8)
             
-            bottom_lt2 = [r + l1 for r, l1 in zip(rec_vals, lt1_vals)]
-            ax.bar(x_labels, lt2_vals, bottom=bottom_lt2, label='LT2', color='orange', alpha=0.8)
+            # 4. Force the X-axis labels to match the positions
+            ax.set_xticks(x_idx)
+            ax.set_xticklabels(x_labels, rotation=45)
             
-            # Labels and styling
             ax.set_ylabel("Minutes")
             ax.legend(loc='upper left')
-            plt.xticks(rotation=45)
             plt.tight_layout()
             
             st.pyplot(fig)
