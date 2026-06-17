@@ -181,6 +181,12 @@ if st.session_state.logged_in:
             runs_df = runs_df.dropna(subset=['Date']).sort_values('Date')
             
 # --- CHART 1: SEASONAL VOLUME ---
+            st.write("--- DEBUGGING DATA ---")
+            st.write(f"Total rows in runs_df: {len(runs_df)}")
+            st.write("Unique dates in runs_df:", runs_df['Date_Only'].unique())
+            st.write("Sample of the data being grouped:")
+            st.write(runs_df.head(10))
+
             st.subheader("Seasonal Volume Trends")
             
             # 1. Clean and Group
