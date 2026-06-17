@@ -224,7 +224,7 @@ if menu == "📊 Dashboard":
                 fig4, ax4 = plt.subplots(); ax4.plot(ef_df['Date'], ef_df['Aerobic_EF'], 'p-'); st.pyplot(fig4)
         else:
             st.info("📊 Training log empty. Sync Strava or add a manual run.")
-
+            
      # --- CHART 4: LACTATE TRACKER ---
         st.divider()
         st.subheader("🩸 Lactate Tracker")
