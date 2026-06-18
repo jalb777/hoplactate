@@ -39,7 +39,7 @@ def load_data(worksheet_name):
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         if 'Athlete_ID' in df.columns and 'username' in st.session_state:
-            df = df[df['Athlete_ID'] == st.session_state.username]
+            df = df[df['Athlete_ID'].str.strip().str.lower() == st.session_state.username.strip().lower()]
         return df
     except Exception:
         return pd.DataFrame(columns=['Date', 'Aerobic_EF', 'Pace_Dec', 'Athlete_ID'])
